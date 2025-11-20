@@ -1,0 +1,1 @@
+loadfile("./luac.out")
