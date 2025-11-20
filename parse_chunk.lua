@@ -148,11 +148,20 @@ end
 local function loadCodeRaw(h)
     local n = loadInt(h)
     local bytes = n * consts.sizes.Instruction
-    print("bytes = ", bytes)
+    print("bytes = ", bytes, "cur =", h:seek("cur"))
     return {
         code = h:read(bytes),
         count = n
     }
+end
+local function parseCode(code)
+    local retv = {}
+    for i = 1, code.count, 1
+    do
+        local d = string.unpack("=I4", string.sub(code.code, (i-1) * consts.sizes.Instruction, i * (consts.sizes.Instruction+1)))
+        table.insert(retv, d)
+    end
+    return retv
 end
 ---Load function constants
 ---@param h file*
@@ -340,7 +349,7 @@ local function loadFunction(h, psource)
         numparams = loadByte(h),
         is_vararg = loadByte(h),
         maxstacksize = loadByte(h),
-        code = loadCodeRaw(h),
+        code = parseCode(loadCodeRaw(h)),
         p = {},
         upvalues = {},
         sizeupvalues = 0,
@@ -392,9 +401,11 @@ is_vararg = %d
 maxstacksize = %d
 sizeupvalues = %d
 #k = %d
-#p = %d]], chunk.source, chunk.linedefined, chunk.lastlinedefined, chunk.numparams, chunk.is_vararg, chunk.maxstacksize, chunk.sizeupvalues, #chunk.k, #chunk.p))
+#p = %d
+#code = %d]], chunk.source, chunk.linedefined, chunk.lastlinedefined, chunk.numparams, chunk.is_vararg, chunk.maxstacksize, chunk.sizeupvalues, #chunk.k, #chunk.p, #chunk.code))
 
 for k, v in ipairs(chunk.upvalues)
 do
     print(string.format("upvalue %s: %s (idx=%d)", v.name, v.kind, v.idx))
 end
+print(chunk.code[1])
