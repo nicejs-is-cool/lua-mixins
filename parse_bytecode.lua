@@ -39,6 +39,20 @@ if compiled == nil then
     print("error:", err)
     return
 end
+---@class Proto
+---@field numparams integer
+---@field is_vararg integer
+---@field maxstacksize integer
+---@field k any
+---@field code any[]
+---@field p Proto[]
+---@field upvalues table[]
+---@field sizeupvalues integer
+---@field lineinfo number[]
+---@field abslineinfo any[]
+---@field locvars any[]
+---@field source string
+---
 ---@class TValue
 ---@field _tt string
 ---@field value_ any
@@ -90,6 +104,25 @@ end
 local function loadInt(h)
     return loadUnsigned(h)
 end
+---load vector
+---@param h file*
+---@param fmt string
+---@param n integer
+---@return table
+local function loadVector(h, fmt, n)
+    --local size = string.packsize(fmt) * n
+    local size = n
+    print("sizeeeee", size)
+    local vals = {}
+    for i = 1, n-1, 1
+    do
+        local str, err = h:read(size)
+        print(string.format("str recv: %q, %s", str, err))
+        local d = string.unpack(fmt, str)
+        table.insert(vals, d)
+    end
+    return vals
+end
 ---Load string.
 ---@param h file*
 ---@return string?
@@ -130,7 +163,9 @@ end
 ---@return TValue[]
 local function loadConstants(h)
     --local i = 0;
-    local n = loadByte(h)
+    local n = loadInt(h)
+
+    print("fucking n", n)
     local typehandler = {
         [consts.LUA_VNIL] = function ()
             --print("vnil")
@@ -164,17 +199,72 @@ local function loadConstants(h)
             return self[consts.LUA_VSHRSTR](self, ...)
         end
     }
-    --print("fucking n", n)
     local retv = {}
-    for i = 0, n, 1
+    for i = 1, n, 1
     do
         local t = loadByte(h)
         print("type=", t)
         local val = typehandler[t](typehandler, t)
         table.insert(retv, val)
-        break
+        
     end
     return retv
+end
+local function loadUpvalues(h)
+    local n = loadInt(h)
+    local upvalues = {}
+    for i = 1, n, 1
+    do
+        table.insert(upvalues, {
+            name = nil,
+            instack = loadByte(h),
+            idx = loadByte(h),
+            kind = loadByte(h)
+        })
+    end
+    return upvalues
+end
+local function readAbsLineInfo(h, n)
+    local ps = string.packsize("ii")
+    local retv = {}
+    for i = 1, n, 1
+    do
+        local pc, line = string.unpack("ii", h:read(ps))
+        table.insert(retv, { pc = pc, line = line })
+    end
+    return retv
+end
+---load debug info
+---@param h file*
+---@param proto Proto
+local function loadDebug(h, proto)
+    local lin = loadInt(h)
+    print("lin = ", lin)
+    proto.lineinfo = loadVector(h, "b", lin)
+    for k, v in ipairs(proto.lineinfo)
+    do
+        print("line", k, v)
+    end
+    local alin = loadInt(h)
+    proto.abslineinfo = readAbsLineInfo(h, alin)
+    local locVarN = loadInt(h)
+    proto.locvars = {}
+    for i = 1, locVarN, 1
+    do
+        table.insert(proto.locvars, {
+            varname = loadStringN(h),
+            startpc = loadInt(h),
+            endpc = loadInt(h)
+        })
+    end
+    local upvalueCount = loadInt(h)
+    if upvalueCount ~= 0 then
+        proto.sizeupvalues = upvalueCount
+    end
+    for i = 1, upvalueCount, 1
+    do
+        proto.upvalues[i].name = loadStringN(h)
+    end
 end
 
 local function checksize(h, size, tname)
@@ -235,7 +325,8 @@ local function checkHeader(h)
         data = luacData,
     }
 end
-
+---@type fun(h: file*, psrc: string): table
+local loadProtos
 local function loadFunction(h, psource)
     print("load str")
     local src = loadStringN(h)
@@ -243,24 +334,49 @@ local function loadFunction(h, psource)
         src = psource
     end
     print('here')
-    local info = {
+    ---@type Proto
+    local retv = {
         source = src,
         linedefined = loadInt(h),
         lastlinedefined = loadInt(h),
         numparams = loadByte(h),
         is_vararg = loadByte(h),
         maxstacksize = loadByte(h),
+        code = loadCodeRaw(h),
+        p = {},
+        upvalues = {},
+        sizeupvalues = 0,
+        lineinfo = {},
+        abslineinfo = {},
+        locvars = {}
     }
-    local code = loadCodeRaw(h)
     local cconsts = loadConstants(h)
+    retv.k = cconsts
     for k, v in ipairs(cconsts)
     do
         print(string.format("const %s = {type=%s, value=%s}", k, v._tt, v.value_))
     end
-    
-    return info
+    local upvalues = loadUpvalues(h)
+    retv.upvalues = upvalues
+    retv.sizeupvalues = #upvalues
+    for k, v in ipairs(upvalues)
+    do
+        print(string.format("{instack=%q, idx=%q, kind=%q}", v.instack, v.idx, v.kind))
+    end
+    local protos = loadProtos(h, psource)
+    retv.p = protos
+    loadDebug(h, retv)
+    return retv
 end
-
+loadProtos = function(h, psrc)
+    local n = loadInt(h)
+    local p = {}
+    for i = 1, n, 1
+    do
+        table.insert(p, loadFunction(h, psrc))
+    end
+    return p
+end
 ---Actually parse the chunk.
 ---@param h file*
 local function parseChunk(h)
