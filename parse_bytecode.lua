@@ -110,15 +110,11 @@ end
 ---@param n integer
 ---@return table
 local function loadVector(h, fmt, n)
-    --local size = string.packsize(fmt) * n
-    local size = n
-    print("sizeeeee", size)
+    local elSize = string.packsize(fmt)
     local vals = {}
-    for i = 1, n-1, 1
+    for i = 1, n, 1
     do
-        local str, err = h:read(size)
-        print(string.format("str recv: %q, %s", str, err))
-        local d = string.unpack(fmt, str)
+        local d = string.unpack(fmt, h:read(elSize))
         table.insert(vals, d)
     end
     return vals
@@ -245,7 +241,9 @@ local function loadDebug(h, proto)
     do
         print("line", k, v)
     end
+    print("got here")
     local alin = loadInt(h)
+    print("got here2")
     proto.abslineinfo = readAbsLineInfo(h, alin)
     local locVarN = loadInt(h)
     proto.locvars = {}
@@ -391,4 +389,12 @@ linedefined = %d
 lastlinedefined = %d
 numparams = %d
 is_vararg = %d
-maxstacksize = %d]], chunk.source, chunk.linedefined, chunk.lastlinedefined, chunk.numparams, chunk.is_vararg, chunk.maxstacksize))
+maxstacksize = %d
+sizeupvalues = %d
+#k = %d
+#p = %d]], chunk.source, chunk.linedefined, chunk.lastlinedefined, chunk.numparams, chunk.is_vararg, chunk.maxstacksize, chunk.sizeupvalues, #chunk.k, #chunk.p))
+
+for k, v in ipairs(chunk.upvalues)
+do
+    print(string.format("upvalue %s: %s (idx=%d)", v.name, v.kind, v.idx))
+end
