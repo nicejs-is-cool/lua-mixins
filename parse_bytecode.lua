@@ -28,7 +28,8 @@ end
 ---@param instr integer
 local function parseInstruction(instr)
     local opcode = lcc.GET_OPCODE(instr)
-    print("opcode", opcode)
+    print("opcode", lcc.OpCode[opcode+1])
 end
 
 parseInstruction(81)
+parseInstruction(11)
